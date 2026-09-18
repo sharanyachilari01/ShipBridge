@@ -28,6 +28,8 @@ export interface Shipment {
   volume_m3?: number;
   priority: PriorityLevel;
   misplaced_at?: string | null;
+  pickup_deadline?: string | null;
+  delivery_deadline?: string | null;
   notes?: string | null;
   created_at: string;
   origin_hub?: Hub | null;
@@ -170,4 +172,143 @@ export interface ShipmentException {
   is_synthetic: boolean;
 }
 
+// Stage 2 Types
 
+export interface Stage2ComponentScores {
+  distance_score: number;
+  time_score: number;
+  cost_score: number;
+  deadline_score: number;
+  capacity_score: number;
+  route_score: number;
+  transfer_score: number;
+  total_score: number;
+}
+
+export interface Stage2LegDetail {
+  leg_index: number;
+  vehicle_id: number;
+  vehicle_code: string;
+  route_id: number;
+  route_code: string;
+  from_hub_id: number;
+  from_hub_name: string;
+  to_hub_id: number;
+  to_hub_name: string;
+  departure_time?: string;
+  arrival_time?: string;
+  distance_km: number;
+}
+
+export interface Stage2PiggybackOption {
+  candidate_id: string;
+  shipment_id: number;
+  vehicle_id: number;
+  vehicle_code: string;
+  route_id: number;
+  route_code: string;
+  pickup_hub_id: number;
+  pickup_hub_name: string;
+  drop_hub_id: number;
+  drop_hub_name: string;
+  number_of_transfers: number;
+  is_direct_piggyback: boolean;
+  available_weight_capacity_kg: number;
+  remaining_weight_capacity_kg: number;
+  available_volume_capacity_m3: number;
+  remaining_volume_capacity_m3: number;
+  route_overlap_km: number;
+  detour_distance_km: number;
+  additional_time_hours: number;
+  estimated_pickup_time: string;
+  estimated_delivery_time: string;
+  transport_cost: number;
+  transfer_cost: number;
+  estimated_total_cost: number;
+  cost_savings_vs_dedicated: number;
+  deadline_margin_hours: number;
+  deadline_risk_level: string;
+  transfer_complexity: string;
+  is_feasible: boolean;
+  rejection_reasons: string[];
+  component_scores: Stage2ComponentScores;
+  piggyback_score: number;
+  rank: number;
+  explanation: string;
+  concerns: string[];
+  legs: Stage2LegDetail[];
+  route_geometry: Array<{ lat: number; lng: number }>;
+}
+
+export interface Stage2AnalysisResult {
+  run_id: string;
+  shipment_id: number;
+  analyzed_at: string;
+  misplaced_location?: { latitude: number; longitude: number } | null;
+  eligible: boolean;
+  ineligibility_reason?: string | null;
+  total_candidates_evaluated: number;
+  feasible_candidates_count: number;
+  opportunities: Stage2PiggybackOption[];
+  rejected_candidates: Array<Record<string, any>>;
+}
+
+export interface SimulationRequest {
+  additional_route_delay_hours: number;
+  additional_handling_delay_minutes: number;
+  available_capacity_adjustment_percent: number;
+  cost_multiplier: number;
+  priority_override?: string;
+}
+
+export interface RankChange {
+  opportunity_id: number;
+  vehicle_code: string;
+  baseline_rank?: number | null;
+  simulated_rank?: number | null;
+  rank_delta: number;
+  status_change: string;
+}
+
+export interface NewlyInfeasibleCandidate {
+  opportunity_id: number;
+  vehicle_code: string;
+  route_code: string;
+  rejection_reasons: string[];
+}
+
+export interface SimulationComparison {
+  baseline_cost: number;
+  simulated_cost: number;
+  cost_delta: number;
+  baseline_eta?: string | null;
+  simulated_eta?: string | null;
+  eta_delay_minutes: number;
+  baseline_deadline_margin_minutes: number;
+  simulated_deadline_margin_minutes: number;
+  baseline_score: number;
+  simulated_score: number;
+  score_delta: number;
+  recommendation_changed: boolean;
+  change_summary: string;
+}
+
+export interface SimulationResult {
+  shipment_id: number;
+  tracking_number: string;
+  simulation_inputs: {
+    additional_route_delay_hours: number;
+    additional_handling_delay_minutes: number;
+    available_capacity_adjustment_percent: number;
+    cost_multiplier: number;
+    priority_override: string;
+  };
+  baseline_recommended_option?: any | null;
+  simulated_recommended_option?: any | null;
+  baseline_options: any[];
+  simulated_options: any[];
+  rank_changes: RankChange[];
+  newly_infeasible_candidates: NewlyInfeasibleCandidate[];
+  comparison: SimulationComparison;
+  has_feasible_simulated_option: boolean;
+}

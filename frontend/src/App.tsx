@@ -17,7 +17,8 @@ import {
 import { Hub, Shipment, VehicleRoute, PiggybackRecommendation } from './types';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabType>('detection');
+  const [activeTab, setActiveTab] = useState<TabType>('map');
+  const [selectedShipmentId, setSelectedShipmentId] = useState<number | null>(null);
   const [hubs, setHubs] = useState<Hub[]>([]);
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [routes, setRoutes] = useState<VehicleRoute[]>([]);
@@ -59,7 +60,6 @@ export const App: React.FC = () => {
         explanation: rec.explanation,
       });
 
-      // Refresh data to reflect recovery in progress
       await loadData();
       alert(`Piggyback Recovery accepted! Shipment ${rec.shipment.tracking_number} assigned to Route ${rec.vehicle_route.vehicle_code}.`);
     } catch (e) {
@@ -67,12 +67,14 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleShipmentCreated = (_newShipment: Shipment) => {
+  const handleShipmentCreated = (newShipment: Shipment) => {
     loadData();
+    setSelectedShipmentId(newShipment.id);
+    setActiveTab('map');
   };
 
   const misplacedCount = shipments.filter((s) => s.status === 'MISPLACED').length;
-  const onTrackCount = shipments.filter((s) => s.status === 'ON_TRACK' || s.status === 'RECOVERING').length;
+  const onTrackCount = shipments.filter((s) => s.status !== 'MISPLACED').length;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
@@ -84,20 +86,22 @@ export const App: React.FC = () => {
       />
 
       {/* Main View Area */}
-      <main className="flex-1 overflow-x-hidden">
+      <main className="flex-1 overflow-x-hidden pb-16">
         {loading ? (
-          <div className="flex items-center justify-center h-[calc(100vh-8rem)] text-slate-500 font-medium">
-            Initializing ShipBridge Command Center...
+          <div className="flex flex-col items-center justify-center h-[calc(100vh-8rem)] text-slate-500 font-medium">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-3" />
+            <span>Loading ShipBridge Command Center Data...</span>
           </div>
         ) : (
           <>
-            {activeTab === 'detection' && <DetectionView />}
             {activeTab === 'map' && (
               <MapView
                 hubs={hubs}
                 shipments={shipments}
                 routes={routes}
                 recommendations={recommendations}
+                selectedShipmentId={selectedShipmentId}
+                onSelectShipmentId={setSelectedShipmentId}
                 onAcceptRecommendation={handleAcceptRecommendation}
                 onSelectTab={(tab) => setActiveTab(tab)}
               />
@@ -106,6 +110,10 @@ export const App: React.FC = () => {
               <RecoveryQueueView
                 shipments={shipments}
                 recommendations={recommendations}
+                onSelectShipmentId={(id) => {
+                  setSelectedShipmentId(id);
+                  setActiveTab('map');
+                }}
                 onAcceptRecommendation={handleAcceptRecommendation}
                 onSelectTab={(tab) => setActiveTab(tab)}
               />
@@ -115,6 +123,8 @@ export const App: React.FC = () => {
                 shipments={shipments}
                 routes={routes}
                 recommendations={recommendations}
+                selectedShipmentId={selectedShipmentId}
+                onSelectShipmentId={setSelectedShipmentId}
                 onAcceptRecommendation={handleAcceptRecommendation}
               />
             )}
@@ -124,6 +134,14 @@ export const App: React.FC = () => {
                 hubs={hubs}
                 onShipmentCreated={handleShipmentCreated}
                 onSelectTab={(tab) => setActiveTab(tab)}
+              />
+            )}
+            {activeTab === 'detection' && (
+              <DetectionView
+                onSelectShipmentId={(id) => {
+                  setSelectedShipmentId(id);
+                  setActiveTab('planner');
+                }}
               />
             )}
           </>

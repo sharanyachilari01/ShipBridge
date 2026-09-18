@@ -5,6 +5,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app import models, schemas, crud, piggyback, seed
+from app.piggybacking_engine import PiggybackingEngine
+from app.recovery_selection import RecommendationService, DecisionService, SelectionRepository
+from app.recovery_selection.simulation_service import SimulationService
 from app.database import engine, get_db, MYSQL_HOST, MYSQL_PORT, MYSQL_DATABASE
 
 app = FastAPI(
@@ -121,6 +124,48 @@ def read_shipments(status: Optional[str] = None, db: Session = Depends(get_db)):
             origin_hub=schemas.HubResponse.model_validate(shp.origin_hub) if shp.origin_hub else None,
             destination_hub=schemas.HubResponse.model_validate(shp.destination_hub) if shp.destination_hub else None,
             expected_next_hub=schemas.HubResponse.model_validate(shp.expected_next_hub) if shp.expected_next_hub else None,
+            current_lat=current_lat,
+            current_lng=current_lng
+        )
+        results.append(resp)
+    return results
+
+
+@app.get("/api/shipments/misplaced", response_model=List[schemas.ShipmentResponse])
+@app.get("/api/v1/shipments/misplaced", response_model=List[schemas.ShipmentResponse])
+def get_misplaced_shipments(db: Session = Depends(get_db)):
+    misplaced = crud.get_shipments(db, status="MISPLACED")
+    results = []
+    for shp in misplaced:
+        latest_tracking = (
+            db.query(models.ShipmentTracking)
+            .filter(models.ShipmentTracking.shipment_id == shp.shipment_id)
+            .order_by(models.ShipmentTracking.timestamp.desc())
+            .first()
+        )
+        hub = shp.expected_next_hub or shp.origin_hub
+        current_lat = float(latest_tracking.current_lat) if (latest_tracking and latest_tracking.current_lat) else (float(hub.latitude) if hub else 17.3850)
+        current_lng = float(latest_tracking.current_lng) if (latest_tracking and latest_tracking.current_lng) else (float(hub.longitude) if hub else 78.4867)
+
+        resp = schemas.ShipmentResponse(
+            id=shp.shipment_id,
+            shipment_id=str(shp.shipment_id),
+            tracking_number=shp.tracking_number,
+            origin_hub_id=shp.origin_id,
+            destination_hub_id=shp.destination_id,
+            expected_next_hub_id=shp.expected_next_hub_id,
+            assigned_vehicle_id=shp.assigned_vehicle_id,
+            priority=shp.shipment_priority,
+            status=shp.current_status,
+            weight_kg=float(shp.shipment_weight_kg),
+            delivery_deadline=shp.delivery_deadline,
+            expected_arrival_time=shp.created_timestamp,
+            created_at=shp.created_timestamp,
+            updated_at=shp.created_timestamp,
+            is_synthetic=shp.is_synthetic,
+            origin_hub=schemas.HubResponse.model_validate(shp.origin_hub) if shp.origin_hub else None,
+            destination_hub=schemas.HubResponse.model_validate(shp.destination_hub) if shp.destination_hub else None,
+            expected_next_hub=schemas.HubResponse.model_validate(shp.expected_next_hub) if shp.expected_next_hub else None,
             assigned_vehicle=schemas.VehicleResponse.model_validate(shp.assigned_vehicle) if shp.assigned_vehicle else None,
             current_lat=current_lat,
             current_lng=current_lng
@@ -170,10 +215,28 @@ def read_shipment(shipment_id: int, db: Session = Depends(get_db)):
     )
 
 
+@app.get("/api/stats")
+def get_network_stats(db: Session = Depends(get_db)):
+    total_count = db.query(models.Shipment).count()
+    misplaced_count = db.query(models.Shipment).filter(models.Shipment.current_status == "MISPLACED").count()
+    on_track_count = db.query(models.Shipment).filter(
+        models.Shipment.current_status.in_(["ON_TRACK", "NORMAL", "IN_TRANSIT", "NORMAL_REROUTED", "RECOVERING", "RECOVERY_APPROVED", "DELIVERED", "SUSPICIOUS", "UNKNOWN_SIGNAL_MONITOR", "DELAYED"])
+    ).count()
+
+    return {
+        "total_shipments": total_count,
+        "misplaced_count": misplaced_count,
+        "on_track_count": on_track_count,
+    }
+
+
 @app.post("/api/shipments", response_model=schemas.ShipmentResponse)
 def create_shipment(shipment_in: schemas.ShipmentCreate, db: Session = Depends(get_db)):
-    shp = crud.create_shipment(db, shipment_in)
-    return read_shipment(shp.shipment_id, db)
+    try:
+        shp = crud.create_shipment(db, shipment_in)
+        return read_shipment(shp.shipment_id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/shipments/{shipment_id}/mark-misplaced", response_model=schemas.ShipmentResponse)
@@ -202,6 +265,132 @@ def accept_recovery_plan(plan_req: schemas.AcceptRecoveryRequest, db: Session = 
 @app.get("/api/impact", response_model=schemas.ImpactMetrics)
 def get_impact_metrics(db: Session = Depends(get_db)):
     return crud.get_impact_metrics(db)
+
+
+# Stage 2 Piggybacking & Recovery Opportunity Endpoints
+
+@app.get("/api/shipments/misplaced", response_model=List[schemas.ShipmentResponse])
+@app.get("/api/v1/shipments/misplaced", response_model=List[schemas.ShipmentResponse])
+def get_misplaced_shipments(db: Session = Depends(get_db)):
+    misplaced = crud.get_shipments(db, status="MISPLACED")
+    results = []
+    for shp in misplaced:
+        results.append(read_shipment(shp.shipment_id, db))
+    return results
+
+
+@app.post("/api/recovery/analyze/{shipment_id}", response_model=schemas.Stage2AnalysisResponse)
+@app.post("/api/v1/recovery/analyze/{shipment_id}", response_model=schemas.Stage2AnalysisResponse)
+def analyze_piggyback_recovery(shipment_id: int, db: Session = Depends(get_db)):
+    engine = PiggybackingEngine()
+    result = engine.analyze_shipment(db, shipment_id)
+    if not result.eligible:
+        if result.ineligibility_reason == "SHIPMENT_NOT_FOUND":
+            raise HTTPException(status_code=404, detail="Shipment not found")
+        elif result.ineligibility_reason == "SHIPMENT_NOT_ELIGIBLE":
+            raise HTTPException(status_code=400, detail="Shipment is not misplaced")
+        elif result.ineligibility_reason == "LOCATION_UNAVAILABLE":
+            raise HTTPException(status_code=400, detail="Telemetry location unavailable for shipment")
+        else:
+            raise HTTPException(status_code=400, detail=result.ineligibility_reason)
+    return result
+
+
+@app.get("/api/recovery/options/{shipment_id}")
+@app.get("/api/v1/recovery/options/{shipment_id}")
+def get_recovery_options(shipment_id: int, db: Session = Depends(get_db)):
+    engine = PiggybackingEngine()
+    result = engine.analyze_shipment(db, shipment_id)
+    if not result.eligible:
+        if result.ineligibility_reason == "SHIPMENT_NOT_FOUND":
+            raise HTTPException(status_code=404, detail="Shipment not found")
+        elif result.ineligibility_reason == "SHIPMENT_NOT_ELIGIBLE":
+            raise HTTPException(status_code=400, detail="Shipment is not misplaced")
+        elif result.ineligibility_reason == "LOCATION_UNAVAILABLE":
+            raise HTTPException(status_code=400, detail="Telemetry location unavailable for shipment")
+        else:
+            raise HTTPException(status_code=400, detail=result.ineligibility_reason)
+    return result
+
+
+@app.get("/api/recovery/options/{shipment_id}/{candidate_id}")
+@app.get("/api/v1/recovery/options/{shipment_id}/{candidate_id}")
+def get_recovery_option_detail(shipment_id: int, candidate_id: str, db: Session = Depends(get_db)):
+    engine = PiggybackingEngine()
+    result = engine.analyze_shipment(db, shipment_id)
+    if not result.eligible:
+        raise HTTPException(status_code=404, detail="Shipment or options not found")
+    
+    for opt in result.opportunities:
+        if opt.candidate_id == candidate_id:
+            return opt
+            
+    raise HTTPException(status_code=404, detail=f"Candidate option {candidate_id} not found for shipment {shipment_id}")
+
+
+# Stage 3 Recovery Selection, Decision & Impact Dashboard Endpoints
+
+@app.post("/api/recovery/recommend/{shipment_id}", response_model=schemas.RecommendationResultResponse)
+@app.post("/api/v1/recovery/recommend/{shipment_id}", response_model=schemas.RecommendationResultResponse)
+def generate_recovery_recommendation(shipment_id: int, db: Session = Depends(get_db)):
+    service = RecommendationService()
+    result = service.generate_recommendation(db, shipment_id)
+    if result.recommendation_status == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    return result
+
+
+@app.get("/api/recovery/recommendations/{shipment_id}", response_model=schemas.RecommendationResultResponse)
+@app.get("/api/v1/recovery/recommendations/{shipment_id}", response_model=schemas.RecommendationResultResponse)
+def get_recovery_recommendation(shipment_id: int, db: Session = Depends(get_db)):
+    service = RecommendationService()
+    result = service.get_latest_recommendation_for_shipment(db, shipment_id)
+    if result.recommendation_status == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    return result
+
+
+@app.post("/api/recovery/recommendations/{recommendation_id}/approve")
+@app.post("/api/v1/recovery/recommendations/{recommendation_id}/approve")
+def approve_recovery_recommendation(
+    recommendation_id: str,
+    req: schemas.ApproveRecommendationRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return DecisionService.approve_recommendation(
+            db=db,
+            recommendation_id=recommendation_id,
+            dispatcher_name=req.dispatcher_name,
+            decision_note=req.decision_note,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/recovery/recommendations/{recommendation_id}/reject")
+@app.post("/api/v1/recovery/recommendations/{recommendation_id}/reject")
+def reject_recovery_recommendation(
+    recommendation_id: str,
+    req: schemas.RejectRecommendationRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return DecisionService.reject_recommendation(
+            db=db,
+            recommendation_id=recommendation_id,
+            dispatcher_name=req.dispatcher_name,
+            decision_note=req.decision_note,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/recovery/impact/dashboard", response_model=schemas.Stage3DashboardResponse)
+@app.get("/api/v1/recovery/impact/dashboard", response_model=schemas.Stage3DashboardResponse)
+def get_recovery_impact_dashboard(db: Session = Depends(get_db)):
+    return SelectionRepository.get_dashboard_metrics(db)
+
 
 
 from app.detection import service as detection_service
@@ -351,5 +540,31 @@ def read_shipment_exceptions(db: Session = Depends(get_db)):
             is_synthetic=exc.is_synthetic,
         ))
     return results
+
+
+@app.post("/api/recovery/simulate/{shipment_id}", response_model=schemas.SimulationResponse, summary="Run non-persistent What-If recovery simulation")
+@app.post("/api/v1/recovery/simulate/{shipment_id}", response_model=schemas.SimulationResponse, summary="Run non-persistent What-If recovery simulation")
+def simulate_recovery(
+    shipment_id: int,
+    req: schemas.SimulationRequest,
+    db: Session = Depends(get_db)
+):
+    try:
+        service = SimulationService()
+        result = service.run_simulation(
+            db=db,
+            shipment_id=shipment_id,
+            additional_route_delay_hours=req.additional_route_delay_hours,
+            additional_handling_delay_minutes=req.additional_handling_delay_minutes,
+            available_capacity_adjustment_percent=req.available_capacity_adjustment_percent,
+            cost_multiplier=req.cost_multiplier,
+            priority_override=req.priority_override,
+        )
+        return result
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Simulation failed: {str(e)}")
+
 
 

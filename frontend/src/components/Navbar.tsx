@@ -1,7 +1,7 @@
 import React from 'react';
 import { Map, AlertCircle, Compass, BarChart3, PlusCircle, ShieldAlert } from 'lucide-react';
 
-export type TabType = 'detection' | 'map' | 'queue' | 'planner' | 'impact' | 'add';
+export type TabType = 'map' | 'queue' | 'planner' | 'impact' | 'add' | 'detection';
 
 interface NavbarProps {
   activeTab: TabType;
@@ -18,12 +18,12 @@ interface NavTab {
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, onSelectTab, misplacedCount }) => {
   const tabs: NavTab[] = [
-    { id: 'detection', label: 'Detection', icon: ShieldAlert },
     { id: 'map', label: 'Map', icon: Map },
     { id: 'queue', label: 'Recovery Queue', icon: AlertCircle, badge: misplacedCount },
     { id: 'planner', label: 'Planner', icon: Compass },
-    { id: 'impact', label: 'Impact', icon: BarChart3 },
+    { id: 'impact', label: 'Network Impact', icon: BarChart3 },
     { id: 'add', label: 'Add Shipment', icon: PlusCircle },
+    { id: 'detection', label: 'Detection Evidence', icon: ShieldAlert },
   ];
 
 

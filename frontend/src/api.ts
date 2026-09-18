@@ -7,7 +7,9 @@ import {
   RecoveryPlanRequest,
   ImpactMetrics,
   FinalEvaluation,
-  ShipmentException
+  ShipmentException,
+  Stage2AnalysisResult,
+  Stage2PiggybackOption
 } from './types';
 
 const API_BASE = '/api';
@@ -37,6 +39,30 @@ export async function fetchShipments(status?: string): Promise<Shipment[]> {
   return res.json();
 }
 
+export async function fetchMisplacedShipments(): Promise<Shipment[]> {
+  const res = await fetch(`${API_BASE}/shipments/misplaced`);
+  if (!res.ok) throw new Error('Failed to fetch misplaced shipments');
+  return res.json();
+}
+
+export async function analyzeRecoveryOptions(shipmentId: number): Promise<Stage2AnalysisResult> {
+  const res = await fetch(`${API_BASE}/recovery/analyze/${shipmentId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Analysis failed' }));
+    throw new Error(err.detail || 'Failed to analyze recovery options');
+  }
+  return res.json();
+}
+
+export async function fetchRecoveryOptions(shipmentId: number): Promise<Stage2AnalysisResult> {
+  const res = await fetch(`${API_BASE}/recovery/options/${shipmentId}`);
+  if (!res.ok) throw new Error('Failed to fetch recovery options');
+  return res.json();
+}
+
 export async function createShipment(payload: {
   tracking_number: string;
   origin_hub_id: number;
@@ -45,6 +71,8 @@ export async function createShipment(payload: {
   weight_kg: number;
   volume_m3: number;
   priority: string;
+  pickup_deadline?: string;
+  delivery_deadline?: string;
   notes?: string;
   simulate_misplaced?: boolean;
 }): Promise<Shipment> {
@@ -121,4 +149,24 @@ export async function fetchExceptions(): Promise<ShipmentException[]> {
   return res.json();
 }
 
-
+export async function simulateRecovery(
+  shipmentId: number,
+  payload: {
+    additional_route_delay_hours: number;
+    additional_handling_delay_minutes: number;
+    available_capacity_adjustment_percent: number;
+    cost_multiplier: number;
+    priority_override?: string;
+  }
+) {
+  const res = await fetch(`${API_BASE}/recovery/simulate/${shipmentId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Simulation failed' }));
+    throw new Error(err.detail || 'Failed to execute recovery simulation');
+  }
+  return res.json();
+}

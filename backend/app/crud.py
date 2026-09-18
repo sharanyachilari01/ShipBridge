@@ -32,14 +32,35 @@ def get_shipment(db: Session, shipment_id: int):
 
 
 def create_shipment(db: Session, shipment_in: schemas.ShipmentCreate):
+    existing = db.query(models.Shipment).filter(models.Shipment.tracking_number == shipment_in.tracking_number).first()
+    if existing:
+        raise ValueError(f"Tracking number {shipment_in.tracking_number} already exists")
+
+    if shipment_in.origin_hub_id == shipment_in.destination_hub_id:
+        raise ValueError("Origin hub and destination hub must be different")
+
+    if shipment_in.weight_kg <= 0:
+        raise ValueError("Shipment weight must be a positive number")
+
+    if (shipment_in.volume_m3 or 0) <= 0:
+        raise ValueError("Shipment volume must be a positive number")
+
+    now = datetime.utcnow()
+    deadline = shipment_in.delivery_deadline or (now + timedelta(hours=24))
+
     db_shipment = models.Shipment(
         tracking_number=shipment_in.tracking_number,
         origin_id=shipment_in.origin_hub_id,
         destination_id=shipment_in.destination_hub_id,
         expected_next_hub_id=shipment_in.expected_next_hub_id or shipment_in.origin_hub_id,
+        assigned_vehicle_id=shipment_in.assigned_vehicle_id,
         shipment_weight_kg=shipment_in.weight_kg,
+        shipment_volume_m3=shipment_in.volume_m3 or 1.0,
         shipment_priority=shipment_in.priority,
         current_status="MISPLACED" if shipment_in.simulate_misplaced else "ON_TRACK",
+        pickup_deadline=shipment_in.pickup_deadline,
+        delivery_deadline=deadline,
+        created_timestamp=now,
         is_synthetic=True
     )
     db.add(db_shipment)
@@ -52,21 +73,22 @@ def create_shipment(db: Session, shipment_in: schemas.ShipmentCreate):
             shipment_id=db_shipment.shipment_id,
             exception_type="MISPLACEMENT_DETECTED",
             severity="HIGH" if shipment_in.priority in ["HIGH", "CRITICAL"] else "NORMAL",
-            detected_timestamp=datetime.utcnow(),
+            detected_timestamp=now,
             confidence_score=0.98,
-            exception_details="Simulated misplacement at transit hub",
+            exception_details=shipment_in.notes or "Simulated misplacement at transit hub",
             is_synthetic=True
         )
         db.add(exception)
 
-    # Create initial tracking record
-    origin_hub = get_hub(db, db_shipment.origin_id)
-    if origin_hub:
+    # Create initial tracking record at current_hub or origin_hub
+    current_hub_id = shipment_in.current_hub_id or db_shipment.origin_id
+    hub = get_hub(db, current_hub_id) or get_hub(db, db_shipment.origin_id)
+    if hub:
         tracking = models.ShipmentTracking(
             shipment_id=db_shipment.shipment_id,
-            timestamp=datetime.utcnow(),
-            current_lat=float(origin_hub.latitude),
-            current_lng=float(origin_hub.longitude),
+            timestamp=now,
+            current_lat=float(hub.latitude),
+            current_lng=float(hub.longitude),
             speed_kmh=0.0,
             tracking_available=True
         )

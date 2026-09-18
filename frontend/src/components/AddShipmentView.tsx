@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Hub, Shipment } from '../types';
 import { createShipment } from '../api';
-import { PlusCircle, CheckCircle2, AlertTriangle, Package, ArrowRight } from 'lucide-react';
+import { PlusCircle, CheckCircle2, AlertTriangle, Package, ArrowRight, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface AddShipmentViewProps {
   hubs: Hub[];
@@ -14,35 +14,77 @@ export const AddShipmentView: React.FC<AddShipmentViewProps> = ({
   onShipmentCreated,
   onSelectTab,
 }) => {
-  const [trackingNumber, setTrackingNumber] = useState<string>(
-    `SHP-${Math.floor(1000 + Math.random() * 9000)}-${['IL', 'IN', 'MO', 'OH'][Math.floor(Math.random() * 4)]}`
-  );
+  const generateTrackingNumber = () => `SB-IND-SH${Math.floor(100 + Math.random() * 900)}`;
+
+  const [trackingNumber, setTrackingNumber] = useState<string>(generateTrackingNumber());
   const [originHubId, setOriginHubId] = useState<number>(hubs[0]?.id || 1);
   const [destinationHubId, setDestinationHubId] = useState<number>(hubs[1]?.id || 2);
-  const [currentHubId, setCurrentHubId] = useState<number>(hubs[2]?.id || 3);
-  const [weightKg, setWeightKg] = useState<number>(240);
-  const [volumeM3, setVolumeM3] = useState<number>(1.5);
+  const [currentHubId, setCurrentHubId] = useState<number>(hubs[0]?.id || 1);
+  const [weightKg, setWeightKg] = useState<number>(350);
+  const [volumeM3, setVolumeM3] = useState<number>(2.2);
   const [priority, setPriority] = useState<string>('HIGH');
-  const [simulateMisplaced, setSimulateMisplaced] = useState<boolean>(true);
-  const [notes, setNotes] = useState<string>('Dispatched from origin; misplaced at interchange sorting hub.');
+  const [notes, setNotes] = useState<string>('Standard logistics dispatch.');
 
+  // Default deadlines
+  const now = new Date();
+  const defaultPickup = new Date(now.getTime() + 3 * 3600 * 1000).toISOString().slice(0, 16);
+  const defaultDelivery = new Date(now.getTime() + 36 * 3600 * 1000).toISOString().slice(0, 16);
+  
+  const [pickupDeadline, setPickupDeadline] = useState<string>(defaultPickup);
+  const [deliveryDeadline, setDeliveryDeadline] = useState<string>(defaultDelivery);
+
+  // Demo controls state
+  const [showDemoControls, setShowDemoControls] = useState<boolean>(false);
+  const [simulateMisplaced, setSimulateMisplaced] = useState<boolean>(false); // Default OFF
+
+  // Validation & Submission state
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [createdResult, setCreatedResult] = useState<Shipment | null>(null);
 
+  const validateForm = (): string | null => {
+    if (!trackingNumber.trim()) {
+      return 'Tracking number is required.';
+    }
+    if (originHubId === destinationHubId) {
+      return 'Origin hub and final destination hub cannot be the same.';
+    }
+    if (weightKg <= 0) {
+      return 'Shipment weight must be greater than 0 kg.';
+    }
+    if (volumeM3 <= 0) {
+      return 'Shipment volume must be greater than 0 m³.';
+    }
+    if (pickupDeadline && deliveryDeadline && new Date(deliveryDeadline) <= new Date(pickupDeadline)) {
+      return 'Delivery deadline must be later than the pickup deadline.';
+    }
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setValidationError(null);
+
+    const error = validateForm();
+    if (error) {
+      setValidationError(error);
+      return;
+    }
+
     setSubmitting(true);
     setCreatedResult(null);
 
     try {
       const newShipment = await createShipment({
-        tracking_number: trackingNumber,
+        tracking_number: trackingNumber.trim(),
         origin_hub_id: originHubId,
         destination_hub_id: destinationHubId,
         current_hub_id: currentHubId,
         weight_kg: weightKg,
         volume_m3: volumeM3,
         priority: priority,
+        pickup_deadline: pickupDeadline ? new Date(pickupDeadline).toISOString() : undefined,
+        delivery_deadline: deliveryDeadline ? new Date(deliveryDeadline).toISOString() : undefined,
         notes: notes,
         simulate_misplaced: simulateMisplaced,
       });
@@ -50,12 +92,11 @@ export const AddShipmentView: React.FC<AddShipmentViewProps> = ({
       setCreatedResult(newShipment);
       onShipmentCreated(newShipment);
 
-      // Generate next random tracking number for convenience
-      setTrackingNumber(
-        `SHP-${Math.floor(1000 + Math.random() * 9000)}-${['IL', 'IN', 'MO', 'OH'][Math.floor(Math.random() * 4)]}`
-      );
-    } catch (err) {
-      alert('Failed to register shipment. Check backend status.');
+      // Reset form with new tracking number
+      setTrackingNumber(generateTrackingNumber());
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || 'Failed to register shipment. Check backend connectivity.';
+      setValidationError(typeof msg === 'string' ? msg : JSON.stringify(msg));
     } finally {
       setSubmitting(false);
     }
@@ -72,11 +113,22 @@ export const AddShipmentView: React.FC<AddShipmentViewProps> = ({
           <div>
             <h2 className="text-xl font-bold text-slate-900">Register New Shipment</h2>
             <p className="text-sm text-slate-500">
-              Add a shipment to the ShipBridge network and optional test misplacement simulation.
+              Dispatch freight across the India logistics network with automatic tracking & route monitoring.
             </p>
           </div>
         </div>
       </div>
+
+      {/* Validation Error Alert */}
+      {validationError && (
+        <div className="bg-rose-50 border border-rose-300 rounded-2xl p-4 shadow-sm text-rose-900 flex items-start gap-3 animate-in fade-in">
+          <AlertTriangle className="h-5 w-5 text-rose-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h4 className="font-bold text-xs uppercase tracking-wider text-rose-700">Form Validation Error</h4>
+            <p className="text-sm mt-0.5 font-medium">{validationError}</p>
+          </div>
+        </div>
+      )}
 
       {/* Success Notification Banner */}
       {createdResult && (
@@ -88,8 +140,8 @@ export const AddShipmentView: React.FC<AddShipmentViewProps> = ({
                 Shipment Registered Successfully!
               </h3>
               <p className="text-xs text-emerald-800 mt-1">
-                Tracking Number: <strong>{createdResult.tracking_number}</strong> | Status:{' '}
-                <strong className={createdResult.status === 'MISPLACED' ? 'text-rose-700' : 'text-emerald-700'}>
+                Tracking Number: <strong className="font-mono">{createdResult.tracking_number}</strong> | Status:{' '}
+                <strong className={createdResult.status === 'MISPLACED' ? 'text-rose-700 font-bold' : 'text-emerald-700 font-bold'}>
                   {createdResult.status}
                 </strong>
               </p>
@@ -97,14 +149,14 @@ export const AddShipmentView: React.FC<AddShipmentViewProps> = ({
                 {createdResult.status === 'MISPLACED' ? (
                   <button
                     onClick={() => onSelectTab('queue')}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-sm"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all"
                   >
-                    View Piggyback Options in Queue <ArrowRight className="h-3.5 w-3.5" />
+                    View Recovery Options in Queue <ArrowRight className="h-3.5 w-3.5" />
                   </button>
                 ) : (
                   <button
                     onClick={() => onSelectTab('map')}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-sm"
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all"
                   >
                     View on Live Map <ArrowRight className="h-3.5 w-3.5" />
                   </button>
@@ -121,7 +173,7 @@ export const AddShipmentView: React.FC<AddShipmentViewProps> = ({
           {/* Tracking Number */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              Tracking Number / Code
+              Tracking Code
             </label>
             <input
               type="text"
@@ -129,6 +181,7 @@ export const AddShipmentView: React.FC<AddShipmentViewProps> = ({
               value={trackingNumber}
               onChange={(e) => setTrackingNumber(e.target.value)}
               className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-sm font-mono text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              placeholder="e.g. SB-IND-SH035"
             />
           </div>
 
@@ -162,7 +215,7 @@ export const AddShipmentView: React.FC<AddShipmentViewProps> = ({
             >
               {hubs.map((h) => (
                 <option key={`orig-${h.id}`} value={h.id}>
-                  {h.name} ({h.code})
+                  {h.name} ({h.city})
                 </option>
               ))}
             </select>
@@ -179,18 +232,18 @@ export const AddShipmentView: React.FC<AddShipmentViewProps> = ({
             >
               {hubs.map((h) => (
                 <option key={`dest-${h.id}`} value={h.id}>
-                  {h.name} ({h.code})
+                  {h.name} ({h.city})
                 </option>
               ))}
             </select>
           </div>
         </div>
 
-        {/* Current Location Hub & Weight */}
+        {/* Current Location Hub, Weight, Volume */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              Current Location Hub
+              Current Hub Location
             </label>
             <select
               value={currentHubId}
@@ -199,7 +252,7 @@ export const AddShipmentView: React.FC<AddShipmentViewProps> = ({
             >
               {hubs.map((h) => (
                 <option key={`curr-${h.id}`} value={h.id}>
-                  {h.name} ({h.code})
+                  {h.name} ({h.city})
                 </option>
               ))}
             </select>
@@ -213,7 +266,7 @@ export const AddShipmentView: React.FC<AddShipmentViewProps> = ({
               type="number"
               required
               min="1"
-              max="15000"
+              max="20000"
               value={weightKg}
               onChange={(e) => setWeightKg(Number(e.target.value))}
               className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
@@ -237,46 +290,92 @@ export const AddShipmentView: React.FC<AddShipmentViewProps> = ({
           </div>
         </div>
 
-        {/* Misplacement Simulation Checkbox */}
-        <div className="p-4 bg-rose-50 rounded-xl border border-rose-200">
-          <label className="flex items-start gap-3 cursor-pointer">
+        {/* Pickup & Delivery Deadlines */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Expected Pickup Time
+            </label>
             <input
-              type="checkbox"
-              checked={simulateMisplaced}
-              onChange={(e) => setSimulateMisplaced(e.target.checked)}
-              className="mt-0.5 h-4 w-4 text-rose-600 rounded border-slate-300 focus:ring-rose-500"
+              type="datetime-local"
+              value={pickupDeadline}
+              onChange={(e) => setPickupDeadline(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
             />
-            <div>
-              <span className="text-xs font-bold text-rose-900 flex items-center gap-1">
-                <AlertTriangle className="h-3.5 w-3.5 text-rose-600" />
-                Simulate Misplacement State Immediately
-              </span>
-              <p className="text-xs text-rose-800 mt-0.5">
-                When checked, this shipment will be flagged as MISPLACED upon registration, generating piggyback recovery recommendations against active vehicle routes.
-              </p>
-            </div>
-          </label>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Final Delivery Deadline
+            </label>
+            <input
+              type="datetime-local"
+              value={deliveryDeadline}
+              onChange={(e) => setDeliveryDeadline(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+          </div>
         </div>
 
-        {/* Notes / Rationale */}
+        {/* Dispatch Notes */}
         <div>
           <label className="block text-xs font-bold text-slate-700 mb-1">
-            Dispatch Notes / Cargo Rationale
+            Dispatch Notes & Handling Instructions
           </label>
           <textarea
             rows={2}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            placeholder="Additional handling instructions..."
+            placeholder="Special instructions or cargo details..."
           />
+        </div>
+
+        {/* Collapsible Demo / Test Controls (Default Collapsed, Toggle Off) */}
+        <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
+          <button
+            type="button"
+            onClick={() => setShowDemoControls(!showDemoControls)}
+            className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              Demo / Test Misplacement Controls
+            </span>
+            {showDemoControls ? (
+              <ChevronUp className="h-4 w-4 text-slate-400" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-slate-400" />
+            )}
+          </button>
+
+          {showDemoControls && (
+            <div className="p-4 border-t border-slate-200 bg-amber-50/50 space-y-3">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={simulateMisplaced}
+                  onChange={(e) => setSimulateMisplaced(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 text-rose-600 rounded border-slate-300 focus:ring-rose-500"
+                />
+                <div>
+                  <span className="text-xs font-bold text-rose-900 flex items-center gap-1">
+                    Simulate Misplacement Flag Immediately
+                  </span>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    When checked for testing, this shipment will register in MISPLACED status, automatically generating Stage 2 piggyback options and Stage 3 recommendations.
+                  </p>
+                </div>
+              </label>
+            </div>
+          )}
         </div>
 
         {/* Submit Button */}
         <button
           type="submit"
           disabled={submitting}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm py-3 px-4 rounded-xl shadow-md flex items-center justify-center gap-2 transition-all"
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm py-3 px-4 rounded-xl shadow-md flex items-center justify-center gap-2 transition-all disabled:opacity-50"
         >
           <Package className="h-5 w-5" />
           {submitting ? 'Registering Shipment...' : 'Register Shipment'}
