@@ -26,6 +26,8 @@ interface PlannerViewProps {
   routes: VehicleRoute[];
   recommendations: PiggybackRecommendation[];
   selectedShipmentId?: number | null;
+  selectedOptionByShipment?: Record<number, number>;
+  onSelectOption?: (shipmentId: number, vehicleId: number) => void;
   onSelectShipmentId?: (id: number) => void;
   onAcceptRecommendation: (rec: PiggybackRecommendation) => void;
 }
@@ -34,6 +36,8 @@ export const PlannerView: React.FC<PlannerViewProps> = ({
   shipments,
   recommendations,
   selectedShipmentId,
+  selectedOptionByShipment,
+  onSelectOption,
   onSelectShipmentId,
   onAcceptRecommendation,
 }) => {
@@ -46,6 +50,7 @@ export const PlannerView: React.FC<PlannerViewProps> = ({
 
   const currentShipment = misplacedShipments.find((s) => s.id === activeShipmentId) || defaultShipment || null;
   const rawRec = recommendations.find((r) => r.shipment.id === activeShipmentId) || null;
+  const currentSelectedVehicleId = currentShipment ? selectedOptionByShipment?.[currentShipment.id] : undefined;
 
   // Additional options from backend
   const [stage2Options, setStage2Options] = useState<Stage2PiggybackOption[]>([]);
@@ -86,13 +91,14 @@ export const PlannerView: React.FC<PlannerViewProps> = ({
           );
           setStage2Options(feasibleOpts);
           if (feasibleOpts.length > 0) {
-            setSelectedOppId(feasibleOpts[0].vehicle_id);
+            const initialId = currentSelectedVehicleId || feasibleOpts[0].vehicle_id;
+            setSelectedOppId(initialId);
           }
         })
         .catch(() => setStage2Options([]))
         .finally(() => setLoadingOptions(false));
     }
-  }, [activeShipmentId]);
+  }, [activeShipmentId, currentSelectedVehicleId]);
 
   // Sync selected shipment prop
   useEffect(() => {
@@ -143,7 +149,7 @@ export const PlannerView: React.FC<PlannerViewProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           dispatcher_name: dispatcherName,
-          decision_note: opp ? `Dispatcher approved alternative vehicle ${opp.vehicle_code}` : 'Dispatcher approved top system recommendation',
+          decision_note: opp ? `Dispatcher approved vehicle ${opp.vehicle_code}` : 'Dispatcher approved top system recommendation',
           selected_opportunity_id: opp ? opp.vehicle_id : undefined,
         }),
       });
@@ -289,16 +295,27 @@ export const PlannerView: React.FC<PlannerViewProps> = ({
                 </p>
               </div>
             ) : hasFeasibleOptions ? (
-              <div className="bg-gradient-to-br from-blue-900 via-slate-900 to-emerald-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl border-2 border-emerald-400/50 space-y-6">
+              <div className={`bg-gradient-to-br from-blue-900 via-slate-900 to-emerald-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl border-2 space-y-6 ${
+                (currentSelectedVehicleId && stage2Options[0]?.vehicle_id === currentSelectedVehicleId) || (!currentSelectedVehicleId)
+                  ? 'border-emerald-400/80 ring-2 ring-emerald-500/20'
+                  : 'border-slate-700'
+              }`}>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
                   <div className="flex items-center gap-3">
                     <span className="p-3 bg-emerald-500/20 text-emerald-400 rounded-2xl border border-emerald-400/30">
                       <Sparkles className="h-7 w-7" />
                     </span>
                     <div>
-                      <span className="text-xs uppercase tracking-widest font-extrabold text-emerald-400 block">
-                        Top System Recommendation #1
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs uppercase tracking-widest font-extrabold text-emerald-400 block">
+                          Top System Recommendation #1
+                        </span>
+                        {((currentSelectedVehicleId && stage2Options[0]?.vehicle_id === currentSelectedVehicleId) || (!currentSelectedVehicleId)) && (
+                          <span className="bg-blue-600 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                            <Check className="h-3 w-3" /> Dispatcher Selected Option
+                          </span>
+                        )}
+                      </div>
                       <h3 className="text-2xl font-extrabold text-white tracking-tight mt-0.5">
                         {rawRec?.vehicle_route?.vehicle_code || stage2Options[0]?.vehicle_code || 'IND-TRK-101'} — {rawRec?.vehicle_route?.vehicle_type || 'Active Carrier'}
                       </h3>
@@ -330,6 +347,24 @@ export const PlannerView: React.FC<PlannerViewProps> = ({
                 </div>
 
                 <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      if (currentShipment) {
+                        onSelectOption?.(currentShipment.id, stage2Options[0]?.vehicle_id || rawRec?.vehicle_route?.id || 101);
+                      }
+                    }}
+                    className={`w-full sm:w-auto font-extrabold text-xs py-3 px-5 rounded-2xl flex items-center justify-center gap-1.5 transition-all ${
+                      (currentSelectedVehicleId && stage2Options[0]?.vehicle_id === currentSelectedVehicleId) || (!currentSelectedVehicleId)
+                        ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-400/40 cursor-default'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md'
+                    }`}
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    {((currentSelectedVehicleId && stage2Options[0]?.vehicle_id === currentSelectedVehicleId) || (!currentSelectedVehicleId))
+                      ? '✓ Piggyback Selected'
+                      : 'Select Piggyback'}
+                  </button>
+
                   <button
                     onClick={() => handleApproveOption(stage2Options[0])}
                     className="w-full sm:flex-1 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-extrabold text-sm py-3.5 px-6 rounded-2xl shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all"
@@ -384,35 +419,69 @@ export const PlannerView: React.FC<PlannerViewProps> = ({
               </h4>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {stage2Options.slice(1).map((opt, idx) => (
-                  <div
-                    key={`opt-alt-${opt.candidate_id}`}
-                    className="p-4 rounded-2xl border bg-slate-50 border-slate-200 hover:border-blue-300 transition-all space-y-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-xs text-slate-900">
-                        Option #{idx + 2}: {opt.vehicle_code}
-                      </span>
-                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-blue-100 text-blue-800">
-                        {opt.transfer_complexity}
-                      </span>
-                    </div>
+                {stage2Options.slice(1).map((opt, idx) => {
+                  const isSelectedOpt = currentSelectedVehicleId === opt.vehicle_id;
 
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      {opt.explanation}
-                    </p>
+                  return (
+                    <div
+                      key={`opt-alt-${opt.candidate_id}`}
+                      className={`p-4 rounded-2xl border transition-all space-y-3 ${
+                        isSelectedOpt
+                          ? 'bg-blue-50/80 border-2 border-blue-500 shadow-md ring-2 ring-blue-400/20'
+                          : 'bg-slate-50 border-slate-200 hover:border-blue-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs text-slate-900">
+                            Option #{idx + 2}: {opt.vehicle_code}
+                          </span>
+                          {isSelectedOpt && (
+                            <span className="bg-blue-600 text-white font-extrabold text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                              <Check className="h-3 w-3" /> Dispatcher Selected Option
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-blue-100 text-blue-800">
+                          {opt.transfer_complexity}
+                        </span>
+                      </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
-                      <span className="font-bold text-slate-800">{formatCurrency(opt.estimated_total_cost)}</span>
-                      <button
-                        onClick={() => handleApproveOption(opt)}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-sm"
-                      >
-                        <Check className="h-3.5 w-3.5" /> Approve This Option
-                      </button>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        {opt.explanation}
+                      </p>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 text-xs">
+                        <span className="font-bold text-slate-800">{formatCurrency(opt.estimated_total_cost)}</span>
+                        
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              if (currentShipment) {
+                                onSelectOption?.(currentShipment.id, opt.vehicle_id);
+                              }
+                            }}
+                            className={`font-bold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-sm transition-all ${
+                              isSelectedOpt
+                                ? 'bg-emerald-600 text-white font-extrabold'
+                                : 'bg-slate-200 hover:bg-slate-300 text-slate-800'
+                            }`}
+                          >
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            {isSelectedOpt ? '✓ Piggyback Selected' : 'Select Piggyback'}
+                          </button>
+
+                          <button
+                            onClick={() => handleApproveOption(opt)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-sm"
+                          >
+                            <Check className="h-3.5 w-3.5" /> Approve This Option
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

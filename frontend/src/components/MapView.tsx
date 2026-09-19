@@ -36,6 +36,8 @@ interface MapViewProps {
   routes: VehicleRoute[];
   recommendations: PiggybackRecommendation[];
   selectedShipmentId?: number | null;
+  selectedOptionByShipment?: Record<number, number>;
+  onSelectOption?: (shipmentId: number, vehicleId: number) => void;
   onSelectShipmentId?: (id: number | null) => void;
   onAcceptRecommendation: (rec: PiggybackRecommendation) => void;
   onSelectTab: (tab: 'queue' | 'planner') => void;
@@ -158,6 +160,8 @@ export const MapView: React.FC<MapViewProps> = ({
   routes,
   recommendations,
   selectedShipmentId,
+  selectedOptionByShipment,
+  onSelectOption,
   onSelectShipmentId,
   onAcceptRecommendation,
   onSelectTab,
@@ -620,12 +624,32 @@ export const MapView: React.FC<MapViewProps> = ({
                 </span>
               </div>
               <p className="text-emerald-800 leading-relaxed">{selectedRec.explanation}</p>
-              <button
-                onClick={() => onAcceptRecommendation(selectedRec)}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-lg shadow-sm flex items-center justify-center gap-1"
-              >
-                <ShieldCheck className="h-4 w-4" /> Approve Piggyback Recovery
-              </button>
+              {(() => {
+                const isSelected = selectedOptionByShipment?.[selectedShipment.id] === selectedRec.vehicle_route.id;
+                return (
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => {
+                        onSelectOption?.(selectedShipment.id, selectedRec.vehicle_route.id);
+                      }}
+                      className={`flex-1 font-bold text-xs py-2 rounded-lg shadow-sm flex items-center justify-center gap-1 transition-all ${
+                        isSelected
+                          ? 'bg-emerald-600 text-white font-extrabold border border-emerald-500'
+                          : 'bg-blue-600 hover:bg-blue-700 text-white'
+                      }`}
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                      {isSelected ? '✓ Piggyback Selected' : 'Select Piggyback'}
+                    </button>
+                    <button
+                      onClick={() => onSelectTab('planner')}
+                      className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs py-2 px-3 rounded-lg flex items-center gap-1"
+                    >
+                      Planner &rarr;
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           ) : selectedShipment.status === 'MISPLACED' ? (
             <button

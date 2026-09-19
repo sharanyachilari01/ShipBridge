@@ -25,6 +25,16 @@ export const App: React.FC = () => {
   const [recommendations, setRecommendations] = useState<PiggybackRecommendation[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
+  const [selectedOptionByShipment, setSelectedOptionByShipment] = useState<Record<number, number>>(() => {
+    try {
+      const saved = sessionStorage.getItem('shipbridge_selected_options');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+
   const loadData = useCallback(async () => {
     try {
       const [hubsData, shipmentsData, routesData, recsData] = await Promise.all([
@@ -48,6 +58,20 @@ export const App: React.FC = () => {
     loadData();
   }, [loadData]);
 
+  const handleSelectOption = (shipmentId: number, vehicleId: number) => {
+    setSelectedOptionByShipment((prev) => {
+      const next = { ...prev, [shipmentId]: vehicleId };
+      try {
+        sessionStorage.setItem('shipbridge_selected_options', JSON.stringify(next));
+      } catch (err) {
+        console.error('Failed to save to sessionStorage', err);
+      }
+      return next;
+    });
+    setSelectedShipmentId(shipmentId);
+    setToastMsg('Piggyback option selected. Review it in Planner before dispatcher approval.');
+  };
+
   const handleAcceptRecommendation = async (rec: PiggybackRecommendation) => {
     try {
       await acceptRecoveryPlan({
@@ -61,7 +85,7 @@ export const App: React.FC = () => {
       });
 
       await loadData();
-      alert(`Piggyback Recovery accepted! Shipment ${rec.shipment.tracking_number} assigned to Route ${rec.vehicle_route.vehicle_code}.`);
+      alert(`Piggyback Recovery approved! Shipment ${rec.shipment.tracking_number} assigned to Route ${rec.vehicle_route.vehicle_code}.`);
     } catch (e) {
       alert('Failed to accept recovery plan');
     }
@@ -77,7 +101,18 @@ export const App: React.FC = () => {
   const onTrackCount = shipments.filter((s) => s.status !== 'MISPLACED').length;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans relative">
+      {/* Toast Notification Banner */}
+      {toastMsg && (
+        <div className="fixed top-16 right-6 z-[1000] bg-slate-900 text-white border-2 border-emerald-400 px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-4 max-w-md">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-xs font-bold text-slate-100">{toastMsg}</span>
+          </div>
+          <button onClick={() => setToastMsg(null)} className="text-slate-400 hover:text-white text-xs font-bold ml-2">✕</button>
+        </div>
+      )}
+
       {/* Top Header Bar */}
       <Header
         misplacedCount={misplacedCount}
@@ -101,6 +136,8 @@ export const App: React.FC = () => {
                 routes={routes}
                 recommendations={recommendations}
                 selectedShipmentId={selectedShipmentId}
+                selectedOptionByShipment={selectedOptionByShipment}
+                onSelectOption={handleSelectOption}
                 onSelectShipmentId={setSelectedShipmentId}
                 onAcceptRecommendation={handleAcceptRecommendation}
                 onSelectTab={(tab) => setActiveTab(tab)}
@@ -110,6 +147,8 @@ export const App: React.FC = () => {
               <RecoveryQueueView
                 shipments={shipments}
                 recommendations={recommendations}
+                selectedOptionByShipment={selectedOptionByShipment}
+                onSelectOption={handleSelectOption}
                 onSelectShipmentId={(id) => {
                   setSelectedShipmentId(id);
                   setActiveTab('map');
@@ -124,6 +163,8 @@ export const App: React.FC = () => {
                 routes={routes}
                 recommendations={recommendations}
                 selectedShipmentId={selectedShipmentId}
+                selectedOptionByShipment={selectedOptionByShipment}
+                onSelectOption={handleSelectOption}
                 onSelectShipmentId={setSelectedShipmentId}
                 onAcceptRecommendation={handleAcceptRecommendation}
               />

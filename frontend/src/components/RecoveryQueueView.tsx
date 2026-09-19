@@ -17,6 +17,8 @@ import {
 interface RecoveryQueueViewProps {
   shipments: Shipment[];
   recommendations: PiggybackRecommendation[];
+  selectedOptionByShipment?: Record<number, number>;
+  onSelectOption?: (shipmentId: number, vehicleId: number) => void;
   onSelectShipmentId?: (id: number) => void;
   onAcceptRecommendation: (rec: PiggybackRecommendation) => void;
   onSelectTab: (tab: 'planner' | 'map' | 'detection') => void;
@@ -25,6 +27,8 @@ interface RecoveryQueueViewProps {
 export const RecoveryQueueView: React.FC<RecoveryQueueViewProps> = ({
   shipments,
   recommendations,
+  selectedOptionByShipment,
+  onSelectOption,
   onSelectShipmentId,
   onAcceptRecommendation,
   onSelectTab,
@@ -155,7 +159,6 @@ export const RecoveryQueueView: React.FC<RecoveryQueueViewProps> = ({
         <div className="space-y-4">
           {sortedShipments.map((shp) => {
             const shipmentRecs = recommendations.filter((r) => r.shipment.id === shp.id);
-            const bestRec = shipmentRecs[0] || null;
 
             return (
               <div
@@ -212,42 +215,61 @@ export const RecoveryQueueView: React.FC<RecoveryQueueViewProps> = ({
                 <div className="p-4 space-y-3">
                   {shipmentRecs.length > 0 ? (
                     <div className="space-y-2">
-                      {shipmentRecs.map((rec) => (
-                        <div
-                          key={`rec-item-${rec.recommendation_id}`}
-                          className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 hover:border-emerald-300 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
-                        >
-                          <div className="space-y-1 max-w-xl">
-                            <div className="flex items-center gap-2">
-                              <span className="bg-emerald-600 text-white font-extrabold text-[10px] px-2 py-0.5 rounded-full">
-                                {rec.match_score}% Match Score
-                              </span>
-                              <span className="font-bold text-xs text-slate-900 flex items-center gap-1">
-                                <Truck className="h-3.5 w-3.5 text-blue-600" />
-                                {rec.vehicle_route.vehicle_code} ({rec.vehicle_route.vehicle_type})
-                              </span>
-                            </div>
+                      {shipmentRecs.map((rec) => {
+                        const isSelected = selectedOptionByShipment?.[shp.id] === rec.vehicle_route.id;
 
-                            <p className="text-xs text-slate-700 bg-white p-2 rounded-lg border border-slate-200/80">
-                              {rec.explanation}
-                            </p>
-
-                            <div className="flex items-center gap-3 text-[11px] font-semibold text-emerald-700">
-                              <span>Save ₹{rec.cost_saved.toLocaleString()} vs dedicated truck</span>
-                              <span>•</span>
-                              <span>Offset {rec.co2_saved_kg} kg CO2</span>
-                            </div>
-                          </div>
-
-                          <button
-                            onClick={() => onAcceptRecommendation(rec)}
-                            className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-3 rounded-xl shadow-sm flex items-center justify-center gap-1 transition-colors whitespace-nowrap"
+                        return (
+                          <div
+                            key={`rec-item-${rec.recommendation_id}`}
+                            className={`rounded-xl p-3.5 border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                              isSelected
+                                ? 'bg-emerald-50/90 border-2 border-emerald-500 shadow-md'
+                                : 'bg-slate-50 border-slate-200 hover:border-blue-300'
+                            }`}
                           >
-                            <ShieldCheck className="h-4 w-4" />
-                            Accept Piggyback
-                          </button>
-                        </div>
-                      ))}
+                            <div className="space-y-1 max-w-xl">
+                              <div className="flex items-center gap-2">
+                                <span className="bg-emerald-600 text-white font-extrabold text-[10px] px-2 py-0.5 rounded-full">
+                                  {rec.match_score}% Match Score
+                                </span>
+                                {isSelected && (
+                                  <span className="bg-emerald-700 text-white font-black text-[10px] px-2.5 py-0.5 rounded-full shadow-sm flex items-center gap-1">
+                                    ✓ SELECTED
+                                  </span>
+                                )}
+                                <span className="font-bold text-xs text-slate-900 flex items-center gap-1">
+                                  <Truck className="h-3.5 w-3.5 text-blue-600" />
+                                  {rec.vehicle_route.vehicle_code} ({rec.vehicle_route.vehicle_type})
+                                </span>
+                              </div>
+
+                              <p className="text-xs text-slate-700 bg-white p-2 rounded-lg border border-slate-200/80">
+                                {rec.explanation}
+                              </p>
+
+                              <div className="flex items-center gap-3 text-[11px] font-semibold text-emerald-700">
+                                <span>Save ₹{rec.cost_saved.toLocaleString()} vs dedicated truck</span>
+                                <span>•</span>
+                                <span>Offset {rec.co2_saved_kg} kg CO2</span>
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => {
+                                onSelectOption?.(shp.id, rec.vehicle_route.id);
+                              }}
+                              className={`w-full sm:w-auto font-bold text-xs py-2 px-3.5 rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-all whitespace-nowrap ${
+                                isSelected
+                                  ? 'bg-emerald-600 text-white hover:bg-emerald-700 font-extrabold border border-emerald-500 shadow-md'
+                                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+                              }`}
+                            >
+                              <ShieldCheck className="h-4 w-4" />
+                              {isSelected ? '✓ Piggyback Selected' : 'Select Piggyback'}
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : (
                     <div className="p-3.5 bg-rose-50/60 rounded-xl border border-rose-200/70 text-xs text-rose-900 flex items-start gap-2.5">
