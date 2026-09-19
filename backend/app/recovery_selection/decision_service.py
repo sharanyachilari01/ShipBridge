@@ -15,6 +15,7 @@ class DecisionService:
         recommendation_id: str,
         dispatcher_name: str,
         decision_note: Optional[str] = None,
+        selected_opportunity_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Approves a recovery recommendation.
@@ -30,12 +31,14 @@ class DecisionService:
             decision_str="APPROVED",
             dispatcher_name=dispatcher_name.strip(),
             decision_note=decision_note,
+            selected_opportunity_id=selected_opportunity_id,
         )
 
         return {
             "status": "APPROVED",
             "recommendation_id": rec.recommendation_id,
             "shipment_id": rec.shipment_id,
+            "selected_opportunity_id": dec.selected_opportunity_id,
             "shipment_status": "RECOVERY_APPROVED",
             "dispatcher_name": dec.dispatcher_name,
             "decision_note": dec.decision_note,

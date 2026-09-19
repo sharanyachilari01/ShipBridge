@@ -252,3 +252,33 @@ def evaluate_all_demo_shipments(db: Session, config: DetectionConfig = DEFAULT_C
         except Exception as e:
             print(f"Error evaluating {shipment_code}: {e}")
     return results
+
+
+def get_at_risk_alerts(db: Session) -> List[Dict[str, Any]]:
+    """
+    Returns all active AtRiskAlert records from shipment_alert_table.
+    """
+    alerts = db.query(models.AtRiskAlert).filter(models.AtRiskAlert.is_resolved == False).all()
+    results = []
+    for a in alerts:
+        reasons = []
+        if a.reasons_json:
+            try:
+                reasons = json.loads(a.reasons_json)
+            except Exception:
+                reasons = [a.reasons_json]
+        shp = a.shipment
+        tracking_num = shp.tracking_number if shp else f"SB-IND-SH{a.shipment_id:03d}"
+        results.append({
+            "alert_id": a.alert_id,
+            "shipment_id": a.shipment_id,
+            "tracking_number": tracking_num,
+            "risk_level": a.risk_level,
+            "reasons": reasons,
+            "current_deviation_km": float(a.current_deviation_km or 0.0),
+            "deadline_buffer_minutes": int(a.deadline_buffer_minutes or 0),
+            "created_timestamp": a.created_timestamp,
+            "is_resolved": a.is_resolved,
+        })
+    return results
+

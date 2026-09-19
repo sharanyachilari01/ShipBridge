@@ -253,12 +253,25 @@ export interface Stage2AnalysisResult {
   rejected_candidates: Array<Record<string, any>>;
 }
 
+export interface AtRiskAlert {
+  alert_id: number;
+  shipment_id: number;
+  tracking_number?: string;
+  risk_level: string;
+  reasons: string[];
+  current_deviation_km: number;
+  deadline_buffer_minutes: number;
+  created_timestamp: string;
+  is_resolved: boolean;
+}
+
 export interface SimulationRequest {
   additional_route_delay_hours: number;
   additional_handling_delay_minutes: number;
   available_capacity_adjustment_percent: number;
   cost_multiplier: number;
   priority_override?: string;
+  transfer_hub_unavailable?: string;
 }
 
 export interface RankChange {

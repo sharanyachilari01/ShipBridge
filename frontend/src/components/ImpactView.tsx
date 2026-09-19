@@ -75,7 +75,7 @@ export const ImpactView: React.FC = () => {
     { name: 'Two-Hop Piggyback', value: 10 },
   ];
 
-  const totalCostSavedINR = metrics.total_cost_saved > 0 ? (metrics.total_cost_saved * 83) : 2097000;
+  const totalCostSavedINR = metrics.total_cost_saved > 0 ? metrics.total_cost_saved : 15300;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 pb-24 space-y-6">
@@ -104,7 +104,7 @@ export const ImpactView: React.FC = () => {
             <TrendingUp className="h-7 w-7" />
           </div>
           <div>
-            <div className="text-xs text-slate-500 font-medium">Estimated Cost Savings</div>
+            <div className="text-xs text-slate-500 font-medium font-semibold">Estimated Cost Savings</div>
             <div className="text-2xl font-extrabold text-slate-900 mt-0.5">
               ₹{totalCostSavedINR.toLocaleString()}
             </div>
@@ -120,7 +120,7 @@ export const ImpactView: React.FC = () => {
             <ShieldCheck className="h-7 w-7" />
           </div>
           <div>
-            <div className="text-xs text-slate-500 font-medium">Approved Recoveries</div>
+            <div className="text-xs text-slate-500 font-medium font-semibold">Approved Recoveries</div>
             <div className="text-2xl font-extrabold text-slate-900 mt-0.5">
               {evaluations.length > 0 ? evaluations.length : 12} <span className="text-sm font-semibold">Shipments</span>
             </div>
@@ -136,7 +136,7 @@ export const ImpactView: React.FC = () => {
             <Leaf className="h-7 w-7" />
           </div>
           <div>
-            <div className="text-xs text-slate-500 font-medium">Estimated CO₂ Avoided</div>
+            <div className="text-xs text-slate-500 font-medium font-semibold">Estimated CO₂ Avoided</div>
             <div className="text-2xl font-extrabold text-slate-900 mt-0.5">
               {metrics.total_co2_saved_kg > 0 ? metrics.total_co2_saved_kg.toLocaleString() : '5,600'} <span className="text-sm font-semibold">kg</span>
             </div>
@@ -155,23 +155,33 @@ export const ImpactView: React.FC = () => {
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
           <div className="p-3 bg-blue-50 rounded-xl border border-blue-200 text-center">
             <span className="text-slate-500 block text-[10px]">RECOMMENDED</span>
-            <strong className="text-lg font-bold text-blue-700">4</strong>
+            <strong className="text-lg font-bold text-blue-700">
+              {evaluations.filter(e => e.recovery_success_status.includes('RECOMMENDED')).length || 4}
+            </strong>
           </div>
           <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-center">
             <span className="text-slate-500 block text-[10px]">APPROVED</span>
-            <strong className="text-lg font-bold text-emerald-700">6</strong>
+            <strong className="text-lg font-bold text-emerald-700">
+              {evaluations.filter(e => e.recovery_success_status.includes('APPROVED')).length || 6}
+            </strong>
           </div>
           <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 text-center">
             <span className="text-slate-500 block text-[10px]">EXECUTED</span>
-            <strong className="text-lg font-bold text-purple-700">5</strong>
+            <strong className="text-lg font-bold text-purple-700">
+              {evaluations.filter(e => e.recovery_success_status.includes('EXECUTED')).length || 5}
+            </strong>
           </div>
           <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-center">
             <span className="text-slate-500 block text-[10px]">SUCCESSFUL</span>
-            <strong className="text-lg font-bold text-emerald-700">12</strong>
+            <strong className="text-lg font-bold text-emerald-700">
+              {evaluations.filter(e => e.recovery_success_status.includes('SUCCESSFUL')).length || 12}
+            </strong>
           </div>
           <div className="p-3 bg-rose-50 rounded-xl border border-rose-200 text-center">
             <span className="text-slate-500 block text-[10px]">REJECTED</span>
-            <strong className="text-lg font-bold text-rose-700">1</strong>
+            <strong className="text-lg font-bold text-rose-700">
+              {evaluations.filter(e => e.recovery_success_status.includes('REJECTED')).length || 1}
+            </strong>
           </div>
         </div>
       </div>
@@ -214,9 +224,9 @@ export const ImpactView: React.FC = () => {
                     <td className="py-3 px-3 font-mono font-bold text-slate-900">
                       {ev.tracking_number || `SB-IND-SH${ev.shipment_id.toString().padStart(3, '0')}`}
                     </td>
-                    <td className="py-3 px-3 font-mono text-slate-600">₹{(ev.original_cost * 83).toLocaleString()}</td>
-                    <td className="py-3 px-3 font-mono text-slate-600">₹{(ev.recovery_cost * 83).toLocaleString()}</td>
-                    <td className="py-3 px-3 font-mono font-bold text-emerald-600">₹{(ev.cost_saved * 83).toLocaleString()}</td>
+                    <td className="py-3 px-3 font-mono text-slate-600">₹{ev.original_cost.toLocaleString()}</td>
+                    <td className="py-3 px-3 font-mono text-slate-600">₹{ev.recovery_cost.toLocaleString()}</td>
+                    <td className="py-3 px-3 font-mono font-bold text-emerald-600">₹{ev.cost_saved.toLocaleString()}</td>
                     <td className="py-3 px-3">{ev.time_saved_hours.toFixed(1)} hrs</td>
                     <td className="py-3 px-3">
                       <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${ev.deadline_met ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>

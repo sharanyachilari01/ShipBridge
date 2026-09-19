@@ -363,6 +363,7 @@ def approve_recovery_recommendation(
             recommendation_id=recommendation_id,
             dispatcher_name=req.dispatcher_name,
             decision_note=req.decision_note,
+            selected_opportunity_id=req.selected_opportunity_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -559,12 +560,20 @@ def simulate_recovery(
             available_capacity_adjustment_percent=req.available_capacity_adjustment_percent,
             cost_multiplier=req.cost_multiplier,
             priority_override=req.priority_override,
+            transfer_hub_unavailable=req.transfer_hub_unavailable,
         )
         return result
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Simulation failed: {str(e)}")
+
+
+@app.get("/api/alerts/at-risk", response_model=List[schemas.AtRiskAlertResponse], summary="Get early misplacement-risk alerts")
+@app.get("/api/v1/alerts/at-risk", response_model=List[schemas.AtRiskAlertResponse], summary="Get early misplacement-risk alerts")
+def get_at_risk_alerts(db: Session = Depends(get_db)):
+    return detection_service.get_at_risk_alerts(db)
+
 
 
 

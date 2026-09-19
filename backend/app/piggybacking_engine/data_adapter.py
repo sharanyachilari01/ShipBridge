@@ -180,24 +180,48 @@ class DataAdapter:
 
         db.flush()
 
-        # Delete existing opportunities for this analysis run to ensure clean overwrite
+        db.flush()
+
+        # Delete existing opportunities for this shipment to ensure clean overwrite per shipment
         db.query(models.RecoveryOpportunity).filter(
-            models.RecoveryOpportunity.analysis_id == analysis_id
+            models.RecoveryOpportunity.shipment_id == shipment_id
         ).delete(synchronize_session=False)
 
+        seen_keys = set()
         saved_opportunities = []
         for opt in options:
+            canon_type = "DIRECT_PIGGYBACK" if opt.is_direct_piggyback else ("TWO_HOP_PIGGYBACK" if opt.number_of_transfers == 1 else "MULTI_TRANSFER")
+            second_v = opt.legs[1].vehicle_id if len(opt.legs) > 1 else 0
+            second_r = opt.legs[1].route_id if len(opt.legs) > 1 else 0
+            transfer_h = opt.legs[0].to_hub_id if len(opt.legs) > 1 else 0
+
+            canon_key = (
+                analysis_id,
+                opt.shipment_id,
+                canon_type,
+                opt.vehicle_id,
+                second_v,
+                opt.route_id,
+                second_r,
+                opt.pickup_hub_id,
+                transfer_h,
+                opt.drop_hub_id,
+            )
+            if canon_key in seen_keys:
+                continue
+            seen_keys.add(canon_key)
+
             opp = models.RecoveryOpportunity(
                 shipment_id=opt.shipment_id,
                 vehicle_id=opt.vehicle_id,
                 analysis_id=analysis_id,
                 candidate_route_id=opt.route_id,
-                recovery_type="DIRECT_PIGGYBACK" if opt.is_direct_piggyback else ("TWO_HOP_PIGGYBACK" if opt.number_of_transfers == 1 else "MULTI_TRANSFER"),
+                recovery_type=canon_type,
                 pickup_hub_id=opt.pickup_hub_id,
                 drop_hub_id=opt.drop_hub_id,
-                transfer_hub_id=opt.legs[0].to_hub_id if len(opt.legs) > 1 else None,
-                second_vehicle_id=opt.legs[1].vehicle_id if len(opt.legs) > 1 else None,
-                second_route_id=opt.legs[1].route_id if len(opt.legs) > 1 else None,
+                transfer_hub_id=transfer_h if transfer_h > 0 else None,
+                second_vehicle_id=second_v if second_v > 0 else None,
+                second_route_id=second_r if second_r > 0 else None,
                 available_weight_kg=opt.available_weight_capacity_kg,
                 remaining_weight_kg=opt.remaining_weight_capacity_kg,
                 available_volume_m3=opt.available_volume_capacity_m3,

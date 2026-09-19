@@ -23,26 +23,50 @@ class SelectionRepository:
     ) -> Tuple[Optional[models.Shipment], List[EvaluatedOptionDomain]]:
         """
         Retrieves shipment and all feasible Stage 2 recovery opportunities from recovery_opportunity_table.
+        Filters by the latest analysis run and deduplicates using canonical uniqueness key.
         """
         shipment = db.query(models.Shipment).filter(models.Shipment.shipment_id == shipment_id).first()
         if not shipment:
             return None, []
 
-        query = (
-            db.query(models.RecoveryOpportunity)
-            .filter(
-                models.RecoveryOpportunity.shipment_id == shipment_id,
-                models.RecoveryOpportunity.feasible == True,
-                or_(
-                    models.RecoveryOpportunity.deadline_feasible == True,
-                    models.RecoveryOpportunity.deadline_feasible.is_(None)
-                ),
-            )
-            .all()
+        latest_run = (
+            db.query(models.PiggybackAnalysisRun)
+            .filter(models.PiggybackAnalysisRun.shipment_id == shipment_id)
+            .order_by(models.PiggybackAnalysisRun.created_at.desc())
+            .first()
         )
 
+        query_builder = db.query(models.RecoveryOpportunity).filter(
+            models.RecoveryOpportunity.shipment_id == shipment_id,
+            models.RecoveryOpportunity.feasible == True,
+            or_(
+                models.RecoveryOpportunity.deadline_feasible == True,
+                models.RecoveryOpportunity.deadline_feasible.is_(None)
+            ),
+        )
+        if latest_run and latest_run.analysis_id:
+            query_builder = query_builder.filter(models.RecoveryOpportunity.analysis_id == latest_run.analysis_id)
+
+        query = query_builder.all()
+
+        seen_keys = set()
         domain_options: List[EvaluatedOptionDomain] = []
         for opp in query:
+            canon_key = (
+                opp.analysis_id or "",
+                opp.shipment_id,
+                opp.recovery_type or "",
+                opp.vehicle_id,
+                opp.second_vehicle_id or 0,
+                opp.candidate_route_id or 0,
+                opp.second_route_id or 0,
+                opp.pickup_hub_id or 0,
+                opp.transfer_hub_id or 0,
+                opp.drop_hub_id or 0,
+            )
+            if canon_key in seen_keys:
+                continue
+            seen_keys.add(canon_key)
             # Parse route geometry if JSON
             geom = []
             if opp.candidate_route and opp.candidate_route.route_geometry_json:
@@ -192,6 +216,7 @@ class SelectionRepository:
         decision_str: str,  # APPROVED or REJECTED
         dispatcher_name: str,
         decision_note: Optional[str],
+        selected_opportunity_id: Optional[int] = None,
     ) -> Tuple[models.RecoveryRecommendation, models.RecoveryDecision]:
         """
         Records dispatcher decision (APPROVED/REJECTED) and updates recommendation status.
@@ -207,10 +232,13 @@ class SelectionRepository:
             raise ValueError(f"Recommendation {recommendation_id} not found")
 
         rec.recommendation_status = decision_str
+        if selected_opportunity_id:
+            rec.selected_opportunity_id = selected_opportunity_id
         rec.updated_at = datetime.utcnow()
 
         dec = models.RecoveryDecision(
             recommendation_id=recommendation_id,
+            selected_opportunity_id=selected_opportunity_id or rec.selected_opportunity_id,
             decision=decision_str,
             dispatcher_name=dispatcher_name,
             decision_note=decision_note,

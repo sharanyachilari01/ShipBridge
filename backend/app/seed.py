@@ -10,6 +10,7 @@ def seed_database(db: Session, reseed_synthetic_only: bool = True):
     26 major Indian hubs, active vehicles, routes, and recovery opportunities in MySQL.
     """
     if reseed_synthetic_only:
+        db.query(models.AtRiskAlert).delete()
         db.query(models.RecoveryImpactSnapshot).delete()
         db.query(models.RecoveryDecision).delete()
         db.query(models.RecoveryRecommendation).delete()
@@ -28,6 +29,7 @@ def seed_database(db: Session, reseed_synthetic_only: bool = True):
         db.query(models.Hub).filter(models.Hub.is_synthetic == True).delete()
         db.commit()
     else:
+        db.query(models.AtRiskAlert).delete()
         db.query(models.RecoveryImpactSnapshot).delete()
         db.query(models.RecoveryDecision).delete()
         db.query(models.RecoveryRecommendation).delete()
@@ -369,7 +371,30 @@ def seed_database(db: Session, reseed_synthetic_only: bool = True):
 
     db.commit()
 
-    # 5. Pre-seed Recovery Opportunities for misplaced shipments (SH009, SH011, SH012, SH020) in INR ₹
+    # Seed 5 Early Misplacement-Risk Alerts (AT_RISK_OF_MISPLACEMENT)
+    at_risk_alerts = [
+        {"shipment_id": 8, "risk_level": "HIGH", "reasons": ["2 consecutive off-route observations", "Heading away from target hub HUB-DEL", "Off-route deviation of 14.2km"], "deviation": 14.2, "buffer": 110},
+        {"shipment_id": 18, "risk_level": "CRITICAL", "reasons": ["Vehicle capacity bottleneck (98% full)", "Tight delivery deadline (<120 min remaining)"], "deviation": 3.4, "buffer": 90},
+        {"shipment_id": 24, "risk_level": "MEDIUM", "reasons": ["Tight delivery deadline (<120 min remaining)", "Delayed vehicle carrying time-sensitive cargo"], "deviation": 5.1, "buffer": 45},
+        {"shipment_id": 31, "risk_level": "HIGH", "reasons": ["Tight delivery deadline (<60 min remaining)", "Vehicle speed anomaly on sector"], "deviation": 8.5, "buffer": 30},
+        {"shipment_id": 37, "risk_level": "HIGH", "reasons": ["2 consecutive off-route observations", "Tight delivery deadline (<90 min remaining)"], "deviation": 11.0, "buffer": 75},
+    ]
+    for ar in at_risk_alerts:
+        alert = models.AtRiskAlert(
+            shipment_id=ar["shipment_id"],
+            risk_level=ar["risk_level"],
+            reasons_json=json.dumps(ar["reasons"]),
+            current_deviation_km=ar["deviation"],
+            deadline_buffer_minutes=ar["buffer"],
+            created_timestamp=now - timedelta(minutes=15),
+            is_resolved=False,
+            is_synthetic=True,
+        )
+        db.add(alert)
+
+    db.commit()
+
+    # 5. Pre-seed Recovery Opportunities for misplaced shipments (SH009, SH011, SH012, SH013, SH020) in INR ₹
     opportunities_data = [
         # SH009: Direct Piggyback
         {
@@ -532,6 +557,38 @@ def seed_database(db: Session, reseed_synthetic_only: bool = True):
             "piggyback_score": 0.76,
             "feasible": True,
             "explanation": "Two-hop piggyback transfer connecting Kochi cargo via Chennai & Lucknow hubs to Delhi Terminal.",
+            "rank": 1
+        },
+        # SH013: No Feasible Recovery Option Scenario
+        {
+            "shipment_id": 13,
+            "vehicle_id": vehicles_map["IND-TRK-309"].vehicle_id,
+            "analysis_id": "REC-SH013-INIT",
+            "candidate_route_id": routes_map["RTE-BLR-HYD-DEL"].route_id,
+            "recovery_type": "DIRECT_PIGGYBACK",
+            "pickup_hub_id": hubs_map["HUB-SXR"].hub_id,
+            "drop_hub_id": hubs_map["HUB-TRV"].hub_id,
+            "transfer_hub_id": None,
+            "available_weight_kg": 4200.0,
+            "remaining_weight_kg": 2000.0,
+            "available_volume_m3": 15.0,
+            "remaining_volume_m3": 8.0,
+            "route_overlap_km": 0.0,
+            "detour_distance_km": 850.0,
+            "additional_time_hours": 32.0,
+            "estimated_delivery_time": now + timedelta(hours=48),
+            "transfer_cost": 0.0,
+            "additional_transport_cost": 18000.0,
+            "estimated_total_cost": 18000.0,
+            "deadline_feasible": False,
+            "deadline_margin_minutes": -720,
+            "deadline_risk": "AT_RISK",
+            "number_of_transfers": 0,
+            "transfer_complexity": "INFEASIBLE",
+            "piggyback_score": 0.12,
+            "feasible": False,
+            "rejection_reason": "No active passing truck route operating on Srinagar-Trivandrum direct corridor within deadline",
+            "explanation": "Infeasible: No active passing truck route operating on Srinagar-Trivandrum direct corridor. Detour distance (850km) and ETA exceed delivery deadline.",
             "rank": 1
         },
         # SH020: Direct Piggyback Alternative

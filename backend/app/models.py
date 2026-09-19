@@ -391,12 +391,14 @@ class RecoveryDecision(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     recommendation_id = Column(String(100), ForeignKey("recovery_recommendations.recommendation_id"), nullable=False, index=True)
+    selected_opportunity_id = Column(Integer, ForeignKey("recovery_opportunity_table.opportunity_id"), nullable=True)
     decision = Column(String(20), nullable=False)  # APPROVED or REJECTED
     dispatcher_name = Column(String(100), nullable=False)
     decision_note = Column(Text, nullable=True)
     decided_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     recommendation = relationship("RecoveryRecommendation", back_populates="decisions")
+    selected_opportunity = relationship("RecoveryOpportunity", foreign_keys=[selected_opportunity_id])
 
 
 class RecoveryImpactSnapshot(Base):
@@ -420,3 +422,24 @@ class RecoveryImpactSnapshot(Base):
 
     shipment = relationship("Shipment")
     selected_opportunity = relationship("RecoveryOpportunity", foreign_keys=[selected_opportunity_id])
+
+
+class AtRiskAlert(Base):
+    __tablename__ = "shipment_alert_table"
+
+    alert_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    shipment_id = Column(Integer, ForeignKey("shipment_table.shipment_id"), nullable=False, index=True)
+    risk_level = Column(String(20), default="MEDIUM", nullable=False)  # LOW, MEDIUM, HIGH, CRITICAL
+    reasons_json = Column(Text, nullable=False)
+    current_deviation_km = Column(Float, nullable=True, default=0.0)
+    deadline_buffer_minutes = Column(Integer, nullable=True, default=0)
+    created_timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    is_resolved = Column(Boolean, default=False, nullable=False)
+    is_synthetic = Column(Boolean, default=True, nullable=False)
+
+    shipment = relationship("Shipment")
+
+    @property
+    def id(self):
+        return self.alert_id
+

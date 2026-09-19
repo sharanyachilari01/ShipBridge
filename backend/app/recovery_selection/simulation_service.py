@@ -39,6 +39,7 @@ class SimulationService:
         available_capacity_adjustment_percent: float = 0.0,
         cost_multiplier: float = 1.0,
         priority_override: Optional[str] = None,
+        transfer_hub_unavailable: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Runs non-persistent simulation on Stage 2 candidate recovery opportunities.
@@ -83,6 +84,23 @@ class SimulationService:
         for opp in query_opps:
             rejection_reasons = []
             is_feasible = True
+
+            # Hub availability check
+            if transfer_hub_unavailable and transfer_hub_unavailable.strip():
+                unavail = transfer_hub_unavailable.strip().upper()
+                hub_codes = []
+                if opp.pickup_hub:
+                    hub_codes.extend([opp.pickup_hub.code.upper(), opp.pickup_hub.name.upper(), str(opp.pickup_hub.hub_id)])
+                if opp.drop_hub:
+                    hub_codes.extend([opp.drop_hub.code.upper(), opp.drop_hub.name.upper(), str(opp.drop_hub.hub_id)])
+                if opp.transfer_hub:
+                    hub_codes.extend([opp.transfer_hub.code.upper(), opp.transfer_hub.name.upper(), str(opp.transfer_hub.hub_id)])
+
+                if any(unavail in code or code in unavail for code in hub_codes):
+                    is_feasible = False
+                    rejection_reasons.append(
+                        f"Transfer hub {transfer_hub_unavailable} is unavailable due to simulated hub closure"
+                    )
 
             # Baseline capacity & adjustment
             base_avail_wt = float(opp.available_weight_kg or 10000.0)
@@ -290,6 +308,7 @@ class SimulationService:
                 "available_capacity_adjustment_percent": available_capacity_adjustment_percent,
                 "cost_multiplier": cost_multiplier,
                 "priority_override": effective_priority,
+                "transfer_hub_unavailable": transfer_hub_unavailable,
             },
             "baseline_recommended_option": baseline_dict,
             "simulated_recommended_option": simulated_top,

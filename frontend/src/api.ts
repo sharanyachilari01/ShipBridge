@@ -9,7 +9,8 @@ import {
   FinalEvaluation,
   ShipmentException,
   Stage2AnalysisResult,
-  Stage2PiggybackOption
+  Stage2PiggybackOption,
+  AtRiskAlert
 } from './types';
 
 const API_BASE = '/api';
@@ -157,6 +158,7 @@ export async function simulateRecovery(
     available_capacity_adjustment_percent: number;
     cost_multiplier: number;
     priority_override?: string;
+    transfer_hub_unavailable?: string;
   }
 ) {
   const res = await fetch(`${API_BASE}/recovery/simulate/${shipmentId}`, {
@@ -168,5 +170,11 @@ export async function simulateRecovery(
     const err = await res.json().catch(() => ({ detail: 'Simulation failed' }));
     throw new Error(err.detail || 'Failed to execute recovery simulation');
   }
+  return res.json();
+}
+
+export async function fetchAtRiskAlerts(): Promise<AtRiskAlert[]> {
+  const res = await fetch(`${API_BASE}/alerts/at-risk`);
+  if (!res.ok) throw new Error('Failed to fetch at-risk alerts');
   return res.json();
 }

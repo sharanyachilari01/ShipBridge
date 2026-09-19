@@ -390,6 +390,7 @@ class RecommendationResultResponse(BaseModel):
 class ApproveRecommendationRequest(BaseModel):
     dispatcher_name: str
     decision_note: Optional[str] = None
+    selected_opportunity_id: Optional[int] = None
 
 
 class RejectRecommendationRequest(BaseModel):
@@ -414,6 +415,20 @@ class Stage3DashboardResponse(BaseModel):
     is_synthetic_estimate: bool = True
 
 
+class AtRiskAlertResponse(BaseModel):
+    alert_id: int
+    shipment_id: int
+    tracking_number: Optional[str] = None
+    risk_level: str
+    reasons: List[str]
+    current_deviation_km: float
+    deadline_buffer_minutes: int
+    created_timestamp: datetime
+    is_resolved: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # What-If Simulation Schemas
 
 class SimulationRequest(BaseModel):
@@ -422,6 +437,7 @@ class SimulationRequest(BaseModel):
     available_capacity_adjustment_percent: float = 0.0
     cost_multiplier: float = 1.0
     priority_override: Optional[str] = None
+    transfer_hub_unavailable: Optional[str] = None
 
 
 class RankChangeSchema(BaseModel):
